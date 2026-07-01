@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Hoja con líneas y esquina doblada - favicon -->
+  <rect x="3" y="3" width="26" height="26" rx="3" fill="white" stroke="#1a365d" stroke-width="1.5"/>
+  <!-- Esquina doblada -->
+  <path d="M21 3 L21 12 L29 12" fill="white" stroke="#1a365d" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M21 3 L21 12 L29 12" fill="#eef2f6"/>
+  <!-- Líneas -->
+  <line x1="8" y1="9" x2="19" y2="9" stroke="#1a365d" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
+  <line x1="8" y1="14" x2="23" y2="14" stroke="#1a365d" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
+  <line x1="8" y1="19" x2="25" y2="19" stroke="#1a365d" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
+  <line x1="8" y1="24" x2="22" y2="24" stroke="#1a365d" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
+</svg>

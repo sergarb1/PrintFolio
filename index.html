@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PrintFolio</title>
+    <meta name="description" content="PrintFolio - Genera tus propios estilos de folios. Creador de hojas personalizadas para profesores.">
+    <meta name="author" content="PrintFolio">
+    <meta name="license" content="AGPL-3.0">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="img/favicon.svg">
+    <link rel="apple-touch-icon" href="img/favicon.svg">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a365d">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+
+    <!-- Hoja de estilos -->
+    <link rel="stylesheet" href="css/style.css">
+
+    <!--
+        Cargador de librerías con fallback local.
+        Detecta si se abre desde file:// y salta CDN directamente.
+        Intenta CDN primero; si falla, usa copia local en lib/
+    -->
+    <script>
+    (function() {
+        /* Detectar si estamos en file:// (sin servidor) */
+        var esLocal = (location.protocol === 'file:');
+
+        var librerias = [
+            {
+                nombre: 'Vue 3',
+                cdn: 'https://unpkg.com/vue@3/dist/vue.global.prod.js',
+                local: 'lib/vue.global.prod.js',
+                variable: 'Vue'
+            },
+            {
+                nombre: 'jsPDF',
+                cdn: 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+                local: 'lib/jspdf.umd.min.js',
+                variable: 'jspdf'
+            }
+        ];
+
+        var indice = 0;
+        var scriptsLocales = ['js/i18n.js', 'js/renderer.js', 'js/export.js'];
+        var localesCargadas = 0;
+        var appCargada = false;
+
+        /**
+         * Carga app.js solo cuando todos los scripts (locales y CDN) estén listos
+         */
+        function iniciarApp() {
+            if (appCargada) return;
+            if (localesCargadas < scriptsLocales.length || indice < librerias.length) {
+                return; /* aún no están todos */
+            }
+            appCargada = true;
+            var app = document.createElement('script');
+            app.src = 'js/app.js';
+            document.head.appendChild(app);
+        }
+
+        /**
+         * Carga los scripts locales que no dependen de CDN
+         */
+        function cargarScriptsLocales() {
+            if (localesCargadas >= scriptsLocales.length) {
+                iniciarApp();
+                return;
+            }
+            var s = document.createElement('script');
+            s.src = scriptsLocales[localesCargadas];
+            s.onload = function() {
+                localesCargadas++;
+                cargarScriptsLocales();
+            };
+            s.onerror = function() {
+                console.warn('No se pudo cargar ' + scriptsLocales[localesCargadas]);
+                localesCargadas++;
+                cargarScriptsLocales();
+            };
+            document.head.appendChild(s);
+        }
+
+        /**
+         * Carga una librería: CDN (si no es file://) o directo local
+         */
+        function cargarSiguiente() {
+            if (indice >= librerias.length) {
+                /* Todas las librerías cargadas, iniciar app.js si locales ya terminaron */
+                iniciarApp();
+                return;
+            }
+
+            var lib = librerias[indice];
+
+            /* Si es file://, ir directo a local para evitar bloqueos CORS */
+            if (esLocal) {
+                cargarLocal(lib);
+            } else {
+                intentarCDN(lib);
+            }
+        }
+
+        function intentarCDN(lib) {
+            var s = document.createElement('script');
+            s.src = lib.cdn;
+            s.onload = function() {
+                console.log('✓ ' + lib.nombre + ' cargado desde CDN');
+                indice++;
+                cargarSiguiente();
+            };
+            s.onerror = function() {
+                console.warn('⚠ CDN no disponible para ' + lib.nombre + ', usando copia local');
+                cargarLocal(lib);
+            };
+            document.head.appendChild(s);
+
+            /* Timeout de seguridad: si en 8s no cargó, probar local */
+            setTimeout(function() {
+                if (typeof window[lib.variable] === 'undefined' && !lib._resuelto) {
+                    lib._resuelto = true;
+                    console.warn('⚠ Timeout para ' + lib.nombre + ', usando copia local');
+                    cargarLocal(lib);
+                } else if (!lib._resuelto) {
+                    lib._resuelto = true;
+                }
+            }, 8000);
+        }
+
+        function cargarLocal(lib) {
+            var s = document.createElement('script');
+            s.src = lib.local;
+            s.onload = function() {
+                if (typeof window[lib.variable] !== 'undefined') {
+                    console.log('✓ ' + lib.nombre + ' cargado desde local');
+                } else {
+                    console.warn('⚠ ' + lib.nombre + ' cargado pero no detectado');
+                }
+                if (!lib._resuelto) {
+                    lib._resuelto = true;
+                    indice++;
+                    cargarSiguiente();
+                }
+            };
+            s.onerror = function() {
+                console.error('✗ No se pudo cargar ' + lib.nombre + ' local');
+                if (!lib._resuelto) {
+                    lib._resuelto = true;
+                    indice++;
+                    cargarSiguiente();
+                }
+            };
+            document.head.appendChild(s);
+        }
+
+        /* Iniciar carga */
+        cargarScriptsLocales();
+        cargarSiguiente();
+    })();
+    </script>
+</head>
+<body>
+
+    <div id="app" v-cloak>
+        <!-- LOADING SPINNER (visible solo mientras v-cloak oculta el contenido) -->
+        <div id="cargando-screen">
+            <div class="spinner"></div>
+            <p>PrintFolio</p>
+        </div>
+
+        <div class="app-content">
+            <!-- ===== ENCABEZADO ===== -->
+        <header class="cabecera">
+            <div class="cabecera-titulo">
+                <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;">
+                    <rect x="3" y="3" width="26" height="26" rx="3" fill="white" stroke="#1a365d" stroke-width="1.2"/>
+                    <path d="M21 3 L21 12 L29 12" fill="#e2e8f0" stroke="#1a365d" stroke-width="1.2" stroke-linejoin="round"/>
+                    <line x1="8" y1="9" x2="19" y2="9" stroke="#1a365d" stroke-width="0.8" stroke-linecap="round"/>
+                    <line x1="8" y1="14" x2="23" y2="14" stroke="#1a365d" stroke-width="0.8" stroke-linecap="round"/>
+                    <line x1="8" y1="19" x2="25" y2="19" stroke="#1a365d" stroke-width="0.8" stroke-linecap="round"/>
+                    <line x1="8" y1="24" x2="22" y2="24" stroke="#1a365d" stroke-width="0.8" stroke-linecap="round"/>
+                </svg>
+                <span style="display:flex; flex-direction:column; line-height:1.2;">
+                    <span><span style="font-weight:700">Print</span><span style="font-weight:300; opacity:0.8">Folio</span></span>
+                    <span style="font-size:0.7rem; font-weight:400; opacity:0.7; letter-spacing:0.3px;">{{ traducciones.appSubtitulo }}</span>
+                </span>
+            </div>
+
+            <nav class="cabecera-nav" :class="{ abierto: menuMovilAbierto }">
+                <a href="#" @click.prevent="mostrarAyuda = true">❓ {{ traducciones.ayuda }}</a>
+                <a href="#" @click.prevent="mostrarAcerca = true">ℹ️ {{ traducciones.acercaDe }}</a>
+                <span class="lang-sep">|</span>
+                <a v-for="idi in idiomasDisponibles" :key="idi.codigo"
+                   href="#"
+                   @click.prevent="cambiarIdioma(idi.codigo)"
+                   :style="{ fontWeight: idioma === idi.codigo ? 'bold' : 'normal', opacity: idioma === idi.codigo ? 1 : 0.7 }">
+                    {{ idi.bandera }} {{ idi.nombre }}
+                </a>
+            </nav>
+
+            <button class="btn-menu-movil" @click="toggleMenuMovil" aria-label="Menú">
+                ☰
+            </button>
+        </header>
+
+        <!-- ===== TOAST NOTIFICATIONS ===== -->
+        <div class="toast-container">
+            <div v-for="t in toasts" :key="t.id" class="toast">
+                <div class="toast-icon" :class="t.tipo">
+                    <span v-if="t.tipo === 'success'">✓</span>
+                    <span v-else-if="t.tipo === 'error'">✕</span>
+                    <span v-else>i</span>
+                </div>
+                <span class="toast-msg">{{ t.mensaje }}</span>
+            </div>
+        </div>
+
+        <!-- ===== LAYOUT PRINCIPAL ===== -->
+        <div class="contenedor">
+            <div class="layout">
+
+                <!-- ===== PANEL DE CONTROL ===== -->
+                <aside class="panel-control">
+                    <div class="panel-control-header">
+                        <button class="panel-tab"
+                                :class="{ activo: panelActivo === 'generar' }"
+                                @click="cambiarPanel('generar')">
+                            ✏️ {{ traducciones.panelGenerar }}
+                        </button>
+                        <button class="panel-tab"
+                                :class="{ activo: panelActivo === 'galeria' }"
+                                @click="cambiarPanel('galeria'); renderizarGaleria()">
+                            🖼 {{ traducciones.panelGaleria }}
+                        </button>
+                    </div>
+
+                    <div class="panel-contenido">
+                        <!-- ===== PANEL: GENERAR (todos los controles) ===== -->
+                        <div v-show="panelActivo === 'generar'">
+                            <!-- TIPO DE PAPEL -->
+                            <div class="grupo-form">
+                                <label>{{ traducciones.tipoPapel }}</label>
+                                <div class="tipos-papel">
+                                    <button v-for="tp in [
+                                        { id: 'rayado', icon: '📝' },
+                                        { id: 'cuadriculado', icon: '📐' },
+                                        { id: 'puntos', icon: '🔵' },
+                                        { id: 'caligrafia', icon: '✍️' },
+                                        { id: 'kinder', icon: '🖍️' },
+                                        { id: 'doblelinea', icon: '📏' },
+                                        { id: 'blanco', icon: '⬜' },
+                                        { id: 'musica', icon: '🎵' },
+                                        { id: 'aritmetica', icon: '➕' },
+                                        { id: 'cornell', icon: '📋' },
+                                        { id: 'isometrica', icon: '🔷' },
+                                        { id: 'hexagonal', icon: '🔶' },
+                                        { id: 'composicion', icon: '🎨' },
+                                        { id: 'milimetrica', icon: '🔲' }
+                                    ]" :key="tp.id"
+                                            class="tipo-papel-btn"
+                                            :data-tipo="tp.id"
+                                            :class="{ seleccionado: tipoPapel === tp.id }"
+                                            @click="tipoPapel = tp.id">
+                                        <span class="icono">{{ tp.icon }}</span>
+                                        <span class="texto">{{ $t(tp.id) }}</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="grupo-form">
+                                <label>{{ traducciones.tamanioPapel }}</label>
+                                <select v-model="tamanioPapel">
+                                    <option v-for="(dims, key) in papelesDisponibles"
+                                            :key="key" :value="key">
+                                        {{ $t(key) }}
+                                    </option>
+                                </select>
+                            </div>
+
+                            <div class="grupo-form">
+                                <label>{{ traducciones.tema }}</label>
+                                <select v-model="tema">
+                                    <option value="personalizado">{{ traducciones.personalizado }}</option>
+                                    <option v-for="(tm, key) in temasDisponibles"
+                                            :key="key" :value="key">
+                                        {{ $t(key) }}
+                                    </option>
+                                </select>
+                            </div>
+
+                            <div class="grupo-form">
+                                <label>{{ traducciones.colorFondo }}</label>
+                                <div style="display:flex; gap:0.5rem; align-items:center;">
+                                    <input type="color" v-model="colorFondo"
+                                           style="width:40px; height:36px; flex-shrink:0;">
+                                    <span style="font-size:0.75rem; color:var(--color-texto-suave); font-family:monospace;">
+                                        {{ colorFondo }}
+                                    </span>
+                                </div>
+                                <div class="colores-rapidos">
+                                    <div v-for="c in coloresDisponibles" :key="c"
+                                         class="color-muestra"
+                                         :class="{ seleccionado: colorFondo === c }"
+                                         :style="{ backgroundColor: c }"
+                                         :title="c"
+                                         @click="aplicarColorRapido(c)">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="grupo-form">
+                                <label>{{ traducciones.colorLinea }}</label>
+                                <input type="color" v-model="colorLinea"
+                                       @input="cambiarColorLinea(colorLinea)">
+                            </div>
+
+                            <div class="grupo-form">
+                                <label>{{ traducciones.estiloLinea }}</label>
+                                <select v-model="estiloLinea">
+                                    <option value="solido">{{ traducciones.solido }}</option>
+                                    <option value="guiones">{{ traducciones.guiones }}</option>
+                                    <option value="puntos">{{ traducciones.puntos }}</option>
+                                    <option value="doble">{{ traducciones.doble }}</option>
+                                    <option value="triple">{{ traducciones.triple }}</option>
+                                </select>
+                            </div>
+
+                            <div class="grupo-form">
+                                <label>{{ traducciones.espaciadoLinea }} ({{ traducciones.mm }})</label>
+                                <input type="number" v-model.number="espaciadoLinea"
+                                       min="2" max="30" step="0.5">
+                            </div>
+
+                            <div class="grupo-form">
+                                <label>{{ traducciones.grosorLinea }} ({{ traducciones.px }})</label>
+                                <input type="number" v-model.number="grosorLinea"
+                                       min="0.1" max="5" step="0.1">
+                            </div>
+
+                            <div class="grupo-form" v-if="tipoPapel === 'cuadriculado' || tipoPapel === 'puntos' || tipoPapel === 'isometrica' || tipoPapel === 'hexagonal' || tipoPapel === 'milimetrica' || tipoPapel === 'aritmetica'">
+                                <label>{{ traducciones.tamanoCelda }} ({{ traducciones.mm }})</label>
+                                <input type="number" v-model.number="tamanoCelda"
+                                       min="1" max="30" step="0.5">
+                            </div>
+
+                            <div class="grupo-form">
+                                <label>{{ traducciones.margenes }}</label>
+                                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem; margin-top:0.5rem;">
+                                    <div>
+                                        <label style="font-size:0.75rem;">{{ traducciones.margenSuperior }}</label>
+                                        <input type="number" v-model.number="margenSuperior" min="0" max="50">
+                                    </div>
+                                    <div>
+                                        <label style="font-size:0.75rem;">{{ traducciones.margenDerecho }}</label>
+                                        <input type="number" v-model.number="margenDerecho" min="0" max="50">
+                                    </div>
+                                    <div>
+                                        <label style="font-size:0.75rem;">{{ traducciones.margenInferior }}</label>
+                                        <input type="number" v-model.number="margenInferior" min="0" max="50">
+                                    </div>
+                                    <div>
+                                        <label style="font-size:0.75rem;">{{ traducciones.margenIzquierdo }}</label>
+                                        <input type="number" v-model.number="margenIzquierdo" min="0" max="50">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="grupo-form">
+                                <label>{{ traducciones.patronFondo }}</label>
+                                <select v-model="patronFondo">
+                                    <option value="ninguno">{{ traducciones.patronNinguno }}</option>
+                                    <option value="cuadricula">{{ traducciones.patronCuadricula }}</option>
+                                    <option value="puntos">{{ traducciones.patronPuntos }}</option>
+                                    <option value="lineas">{{ traducciones.patronLineas }}</option>
+                                    <option value="cuadros">{{ traducciones.patronCuadros }}</option>
+                                </select>
+                            </div>
+
+                            <div class="grupo-form">
+                                <label>{{ traducciones.imagenFondo }}</label>
+                                <div v-if="imagenFondoData" style="margin-bottom:0.5rem;">
+                                    <small style="color:var(--color-texto-suave);">
+                                        {{ nombreImagenFondo }}
+                                    </small>
+                                    <button class="btn btn-peligro" @click="quitarImagenFondo"
+                                            style="display:block; margin-top:0.3rem; font-size:0.75rem;">
+                                        {{ traducciones.quitarImagen }}
+                                    </button>
+                                </div>
+                                <div v-else>
+                                    <label class="btn" style="cursor:pointer; display:inline-flex;">
+                                        {{ traducciones.cargarImagen }}
+                                        <input type="file" accept="image/*" @change="cargarImagenFondo"
+                                               style="display:none;">
+                                    </label>
+                                    <p class="ayuda">{{ traducciones.sinImagen }}</p>
+                                </div>
+                            </div>
+
+                            <hr style="border:none; border-top:1px solid var(--color-borde); margin:1rem 0;">
+
+                            <div class="grupo-form">
+                                <label class="checkbox-grupo">
+                                    <input type="checkbox" v-model="mostrarNumPagina">
+                                    <span>{{ traducciones.mostrarNumPagina }}</span>
+                                </label>
+                            </div>
+
+                            <div class="grupo-form">
+                                <label class="checkbox-grupo">
+                                    <input type="checkbox" v-model="mostrarBorde">
+                                    <span>{{ traducciones.mostrarBorde }}</span>
+                                </label>
+                            </div>
+
+                            <div class="grupo-form">
+                                <label>{{ traducciones.numPaginas }}</label>
+                                <input type="number" v-model.number="numPaginas"
+                                       min="1" max="100">
+                            </div>
+
+                            <hr style="border:none; border-top:1px solid var(--color-borde); margin:1rem 0;">
+
+                            <div class="grupo-form">
+                                <label class="checkbox-grupo">
+                                    <input type="checkbox" v-model="mostrarMarcaAgua">
+                                    <span>{{ traducciones.mostrarMarcaAgua }}</span>
+                                </label>
+                                <input v-if="mostrarMarcaAgua" type="text"
+                                       v-model="marcaAguaTexto"
+                                       :placeholder="traducciones.textoMarcaAgua"
+                                       style="margin-top:0.3rem;">
+                            </div>
+
+                            <hr style="border:none; border-top:1px solid var(--color-borde); margin:1rem 0;">
+
+                            <div class="grupo-form" style="display:flex; flex-direction:column; gap:0.5rem;">
+                                <button class="btn btn-config" @click="exportarConfiguracion" style="width:100%; justify-content:center;">
+                                    ⬇ {{ traducciones.exportarConfig }}
+                                </button>
+                                <label class="btn btn-config" style="cursor:pointer; width:100%; text-align:center;">
+                                    ⬆ {{ traducciones.importarConfig }}
+                                    <input type="file" accept=".json" @change="importarConfiguracion"
+                                           style="display:none;">
+                                </label>
+                                <button class="btn btn-config btn-restaurar" @click="restaurarValores" style="width:100%; justify-content:center;">
+                                    ↺ {{ traducciones.restaurarValores }}
+                                </button>
+                            </div>
+
+                        </div>
+
+                        <!-- ===== PANEL: GALERÍA ===== -->
+                        <div v-show="panelActivo === 'galeria'">
+                            <div class="grupo-form">
+                                <label>{{ traducciones.panelGaleria }}</label>
+                                <p class="ayuda" style="margin-bottom:0.75rem;">
+                                    {{ traducciones.galeriaDescripcion }}
+                                </p>
+                                <div style="display:flex; flex-direction:column; gap:0.5rem; margin-bottom:1rem;">
+                                    <button class="btn btn-primario" @click="galeriaExportarPDF"
+                                            :disabled="exportando || galeria.length === 0"
+                                            style="width:100%;">
+                                        📄 {{ traducciones.batchPDF }}
+                                    </button>
+                                </div>
+                                <div class="galeria-grid">
+                                    <div v-for="item in galeria" :key="item.tipo" class="galeria-item">
+                                        <canvas :ref="'galeria-' + item.tipo" class="galeria-canvas"></canvas>
+                                        <span class="galeria-nombre">{{ $t(item.tipo) }}</span>
+                                        <div class="galeria-acciones">
+                                            <button class="btn btn-small" @click="galeriaDescargarPNG(item.tipo)">
+                                                🖼 PNG
+                                            </button>
+                                            <button class="btn btn-small btn-small-pdf" @click="galeriaDescargarPDF(item.tipo)">
+                                                📄 PDF
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </aside>
+
+                <!-- ===== PANEL DE PREVISUALIZACIÓN ===== -->
+                <section class="panel-preview">
+                    <div class="preview-header">
+                        <h2>{{ traducciones.preview }}</h2>
+                        <span class="info">
+                            {{ nombreTipoPapel }} —
+                            {{ dimensionesPapel.width }} × {{ dimensionesPapel.height }} mm
+                        </span>
+                    </div>
+
+                    <div class="preview-contenedor">
+                        <canvas ref="previewCanvas" id="previewCanvas"></canvas>
+                    </div>
+
+                    <!-- ===== BANNER GALERÍA ===== -->
+                    <div class="galeria-banner" @click="cambiarPanel('galeria'); renderizarGaleria()">
+                        <span class="galeria-banner-icono">🖼</span>
+                        <span class="galeria-banner-texto">{{ traducciones.galeriaBanner }}</span>
+                        <span class="galeria-banner-flecha">→</span>
+                    </div>
+
+                    <!-- ===== DESCARGA ===== -->
+                    <div class="descarga-seccion">
+                        <h3 class="descarga-titulo">⬇ {{ traducciones.descargaTitulo }}</h3>
+                        <div class="descarga-grid">
+                            <button class="descarga-card" @click="exportarPDF" :disabled="exportando">
+                                <span class="descarga-icono">📄</span>
+                                <span class="descarga-nombre">{{ traducciones.exportarPDF }}</span>
+                                <span class="descarga-info">200 DPI • {{ traducciones.descargaListo }}</span>
+                            </button>
+                            <button class="descarga-card" @click="exportarPNG" :disabled="exportando">
+                                <span class="descarga-icono">🖼</span>
+                                <span class="descarga-nombre">{{ traducciones.exportarPNG }}</span>
+                                <span class="descarga-info">300 DPI • {{ traducciones.descargaListo }}</span>
+                            </button>
+                            <button class="descarga-card" @click="imprimir">
+                                <span class="descarga-icono">🖨</span>
+                                <span class="descarga-nombre">{{ traducciones.imprimir }}</span>
+                                <span class="descarga-info">Ctrl+P</span>
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </div>
+        </div><!-- /.app-content -->
+
+        <!-- ===== MODAL: AYUDA ===== -->
+        <div class="modal-overlay" v-show="mostrarAyuda" @click.self="mostrarAyuda = false">
+            <div class="modal">
+                <div class="modal-header">
+                    <h2>{{ traducciones.ayudaTitulo }}</h2>
+                    <button class="modal-close" @click="mostrarAyuda = false">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <section style="margin-bottom:1.5rem;">
+                        <h3 style="margin-bottom:0.5rem; color:var(--color-primario);">⌨️ {{ traducciones.ayudaShortcutsTitulo }}</h3>
+                        <ul class="ayuda-lista">
+                            <li>{{ traducciones.ayudaShortcutPrint }}</li>
+                            <li>{{ traducciones.ayudaShortcutExport }}</li>
+                        </ul>
+                    </section>
+                    <section style="margin-bottom:1.5rem;">
+                        <h3 style="margin-bottom:0.5rem; color:var(--color-primario);">📄 {{ traducciones.ayudaTiposTitulo }}</h3>
+                        <ul class="ayuda-lista">
+                            <li><strong>{{ traducciones.rayado }}</strong> &mdash; {{ traducciones.ayudaTipoRayado }}</li>
+                            <li><strong>{{ traducciones.cuadriculado }}</strong> &mdash; {{ traducciones.ayudaTipoCuadriculado }}</li>
+                            <li><strong>{{ traducciones.puntos }}</strong> &mdash; {{ traducciones.ayudaTipoPuntos }}</li>
+                            <li><strong>{{ traducciones.caligrafia }}</strong> &mdash; {{ traducciones.ayudaTipoCaligrafia }}</li>
+                            <li><strong>{{ traducciones.kinder }}</strong> &mdash; {{ traducciones.ayudaTipoKinder }}</li>
+                            <li><strong>{{ traducciones.doblelinea }}</strong> &mdash; {{ traducciones.ayudaTipoDobleLinea }}</li>
+                            <li><strong>{{ traducciones.blanco }}</strong> &mdash; {{ traducciones.ayudaTipoBlanco }}</li>
+                            <li><strong>{{ traducciones.musica }}</strong> &mdash; {{ traducciones.ayudaTipoMusica }}</li>
+                            <li><strong>{{ traducciones.aritmetica }}</strong> &mdash; {{ traducciones.ayudaTipoAritmetica }}</li>
+                            <li><strong>{{ traducciones.cornell }}</strong> &mdash; {{ traducciones.ayudaTipoCornell }}</li>
+                            <li><strong>{{ traducciones.isometrica }}</strong> &mdash; {{ traducciones.ayudaTipoIsometrica }}</li>
+                            <li><strong>{{ traducciones.hexagonal }}</strong> &mdash; {{ traducciones.ayudaTipoHexagonal }}</li>
+                            <li><strong>{{ traducciones.composicion }}</strong> &mdash; {{ traducciones.ayudaTipoComposicion }}</li>
+                            <li><strong>{{ traducciones.milimetrica }}</strong> &mdash; {{ traducciones.ayudaTipoMilimetrica }}</li>
+                        </ul>
+                    </section>
+                    <section style="margin-bottom:1.5rem;">
+                        <h3 style="margin-bottom:0.5rem; color:var(--color-primario);">⬇ {{ traducciones.ayudaExportarTitulo }}</h3>
+                        <ul class="ayuda-lista">
+                            <li>{{ traducciones.ayudaExportarPDF }}</li>
+                            <li>{{ traducciones.ayudaExportarPNG }}</li>
+                            <li>{{ traducciones.ayudaExportarTodos }}</li>
+                        </ul>
+                    </section>
+                    <section style="margin-bottom:1.5rem;">
+                        <h3 style="margin-bottom:0.5rem; color:var(--color-primario);">🎨 {{ traducciones.ayudaPersonalizarTitulo }}</h3>
+                        <ul class="ayuda-lista">
+                            <li>{{ traducciones.ayudaPersonalizarTemas }}</li>
+                            <li>{{ traducciones.ayudaPersonalizarMargenes }}</li>
+                            <li>{{ traducciones.ayudaPersonalizarLinea }}</li>
+                            <li>{{ traducciones.ayudaPersonalizarFondo }}</li>
+                            <li>{{ traducciones.ayudaPersonalizarOpciones }}</li>
+                        </ul>
+                    </section>
+                    <section style="margin-bottom:1.5rem;">
+                        <h3 style="margin-bottom:0.5rem; color:var(--color-primario);">💡 {{ traducciones.ayudaIdeasTitulo }}</h3>
+                        <ul class="ayuda-lista">
+                            <li>{{ traducciones.ayudaIdea1 }}</li>
+                            <li>{{ traducciones.ayudaIdea2 }}</li>
+                            <li>{{ traducciones.ayudaIdea3 }}</li>
+                            <li>{{ traducciones.ayudaIdea4 }}</li>
+                        </ul>
+                    </section>
+                    <section style="margin-bottom:1.5rem;">
+                        <h3 style="margin-bottom:0.5rem; color:var(--color-primario);">↺ {{ traducciones.ayudaRestaurarTitulo }}</h3>
+                        <p class="ayuda-lista">{{ traducciones.ayudaRestaurarTexto }}</p>
+                    </section>
+                    <section>
+                        <h3 style="margin-bottom:0.5rem; color:var(--color-primario);">📖 {{ traducciones.ayudaUsoTitulo }}</h3>
+                        <ol class="ayuda-lista">
+                            <li>{{ traducciones.ayudaUsoPaso1 }}</li>
+                            <li>{{ traducciones.ayudaUsoPaso2 }}</li>
+                            <li>{{ traducciones.ayudaUsoPaso3 }}</li>
+                            <li>{{ traducciones.ayudaUsoPaso4 }}</li>
+                            <li>{{ traducciones.ayudaUsoPaso5 }}</li>
+                        </ol>
+                    </section>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primario" @click="mostrarAyuda = false">{{ traducciones.cerrar }}</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== MODAL: ACERCA DE ===== -->
+        <div class="modal-overlay" v-show="mostrarAcerca" @click.self="mostrarAcerca = false">
+            <div class="modal" style="max-width:480px;">
+                <div class="modal-header">
+                    <h2>📋 <span style="font-weight:700">Print</span><span style="font-weight:300">Folio</span></h2>
+                    <button class="modal-close" @click="mostrarAcerca = false">&times;</button>
+                </div>
+                <div class="modal-body" style="text-align:center;">
+                    <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:64px; height:64px; margin:0 auto 1rem;">
+                        <rect x="3" y="3" width="26" height="26" rx="3" fill="white" stroke="#1a365d" stroke-width="1.2"/>
+                        <path d="M21 3 L21 12 L29 12" fill="white" stroke="#1a365d" stroke-width="1.2" stroke-linejoin="round"/>
+                        <path d="M21 3 L21 12 L29 12" fill="#eef2f6"/>
+                        <line x1="8" y1="9" x2="19" y2="9" stroke="#1a365d" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
+                        <line x1="8" y1="14" x2="23" y2="14" stroke="#1a365d" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
+                        <line x1="8" y1="19" x2="25" y2="19" stroke="#1a365d" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
+                        <line x1="8" y1="24" x2="22" y2="24" stroke="#1a365d" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
+                    </svg>
+                    <p>{{ traducciones.acercaDescripcion }}</p>
+                    <p style="margin-top:0.75rem; font-size:0.8rem; color:var(--color-texto-suave);">
+                        🆓 {{ traducciones.licencia }} &mdash; <a href="LICENSE" target="_blank" rel="noopener noreferrer" style="color:var(--color-primario);">LICENSE</a>
+                    </p>
+                    <div style="margin-top:1.5rem; display:flex; flex-direction:column; gap:0.75rem; align-items:center;">
+                        <a :href="traducciones.acercaWebUrl" target="_blank" rel="noopener noreferrer"
+                           class="btn btn-primario" style="text-decoration:none; display:inline-flex; align-items:center; gap:0.5rem;">
+                            🌐 {{ traducciones.acercaWeb }}
+                        </a>
+                        <a href="https://github.com/sergarb1/PrintFolio" target="_blank" rel="noopener noreferrer"
+                           style="color:var(--color-primario); font-size:0.85rem; text-decoration:underline;">
+                            {{ traducciones.acercaRepo }}
+                        </a>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn" @click="mostrarAcerca = false">{{ traducciones.cerrar }}</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== PIE DE PÁGINA ===== -->
+        <footer style="text-align:center; padding:1.5rem; color:var(--color-texto-suave); font-size:0.8rem; border-top:1px solid var(--color-borde); margin-top:2rem;">
+            <p>{{ traducciones.creditos }}</p>
+            <p>{{ traducciones.licencia }}</p>
+        </footer>
+    </div>
+
+    <script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js');
+    }
+    </script>
+</body>
+</html>
